@@ -805,9 +805,30 @@ def get_news(query):
     else:
         url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
     try:
-        return {"query": query, "articles": _parse_rss(http_text(url), 5)}
+        articles = _parse_rss(http_text(url), 3)
     except Exception as exc:
         return {"error": f"News service unavailable: {exc}"}
+
+    if not articles:
+        return {"query": query, "headline": None, "note": "No recent news found."}
+
+    # Voice answers should name one story, not merge two.  Return a single
+    # headline so the model has nothing else to combine, and keep its source.
+    top = articles[0]
+    title = top["title"]
+    source = top["source"]
+    # Google News titles end with " - Source"; drop the suffix to avoid the
+    # model reading the source twice ("... - Reuters, 据路透社报道").
+    if source and title.endswith(f" - {source}"):
+        title = title[: -(len(source) + 3)].strip()
+    return {
+        "query": query,
+        "headline": title,
+        "source": source,
+        "published": top["published"],
+        "link": top["link"],
+        "note": "Report only this headline and its source.",
+    }
 
 
 def search_places(query):
@@ -1364,7 +1385,7 @@ TOOLS = [
     ),
     _tool(
         "get_news",
-        "Get recent news headlines for a topic.",
+        "Get the single most relevant recent news headline for a topic, with its source.",
         {"query": {"type": "string", "description": "News topic or keyword"}},
         ["query"],
     ),
@@ -1616,14 +1637,308 @@ CORE_TOOL_NAMES = ("get_weather", "get_wikipedia", "search_web")
 
 def select_tools(question):
     """Return the tool schemas relevant to a question (small, ordered subset)."""
+    names = matched_tool_names(question)
+    if not names:
+        names = list(CORE_TOOL_NAMES)
+    return [t for t in TOOLS if t["function"]["name"] in names]
+
+
+def matched_tool_names(question):
+    """Tools whose keyword group matched the question, in TOOL_GROUPS order.
+
+    An empty list means the question looks like plain chat.  Callers use that
+    to tell a normal NO_TOOL decision from a routing failure.
+    """
     q = (question or "").lower()
-    names = set()
+    names = []
     for keys, group in TOOL_GROUPS:
         if any(k.lower() in q for k in keys):
-            names.update(group)
-    if not names:
-        names.update(CORE_TOOL_NAMES)
-    return [t for t in TOOLS if t["function"]["name"] in names]
+            names.extend(group)
+    return list(dict.fromkeys(names))
+
+
+# --- Router safety net -----------------------------------------------------
+#
+# If the router says NO_TOOL for an obvious live-data question, the caller
+# retries the decision once.  When the retry also declines, these helpers build
+# a best-effort call for tools whose arguments can be derived from the question
+# text.  Entity-heavy tools (tickers, currency pairs, flight numbers) are left
+# out: a wrong forced call is worse than a normal answer.
+
+_CITY_TOOL_ARGS = {
+    "get_weather": lambda city: {"city": city},
+    "get_forecast": lambda city: {"city": city, "days": 3},
+    "get_air_quality": lambda city: {"city": city},
+    "get_sunrise_sunset": lambda city: {"city": city},
+    "get_weather_alerts": lambda city: {"city": city},
+}
+
+_CITY_NOISE_ZH = (
+    "请问",
+    "帮我",
+    "帮忙",
+    "查一下",
+    "查查",
+    "告诉我",
+    "我想知道",
+    "现在",
+    "今天",
+    "明天",
+    "后天",
+    "最近",
+    "这几天",
+    "的",
+    "天气",
+    "气温",
+    "温度",
+    "气候",
+    "预报",
+    "下雨",
+    "下雪",
+    "雨",
+    "雪",
+    "风",
+    "晴",
+    "阴",
+    "会",
+    "有",
+    "吗",
+    "呢",
+    "怎么样",
+    "如何",
+    "情况",
+    "多少",
+    "几度",
+    "度",
+    "几点",
+    "空气",
+    "质量",
+    "日出",
+    "日落",
+    "预警",
+    "警报",
+)
+_CITY_NOISE_EN = (
+    "what",
+    "what's",
+    "how",
+    "is",
+    "the",
+    "weather",
+    "forecast",
+    "like",
+    "in",
+    "at",
+    "today",
+    "tomorrow",
+    "now",
+    "temperature",
+    "rain",
+    "snow",
+    "wind",
+    "sunny",
+    "cloudy",
+    "air",
+    "quality",
+    "sunrise",
+    "sunset",
+    "alert",
+    "alerts",
+    "time",
+    "please",
+    "tell",
+    "me",
+)
+_CITY_NOISE_EN_RE = re.compile(
+    r"\b(" + "|".join(re.escape(w) for w in _CITY_NOISE_EN) + r")\b", re.IGNORECASE
+)
+
+# A small whitelist makes the guess reliable for the cities people actually
+# ask about; the text-cleaning path below still handles everything else.
+_COMMON_CITIES = tuple(
+    sorted(
+        {
+            "北京",
+            "上海",
+            "广州",
+            "深圳",
+            "杭州",
+            "成都",
+            "重庆",
+            "武汉",
+            "西安",
+            "南京",
+            "天津",
+            "苏州",
+            "长沙",
+            "郑州",
+            "青岛",
+            "厦门",
+            "福州",
+            "济南",
+            "合肥",
+            "昆明",
+            "大连",
+            "沈阳",
+            "哈尔滨",
+            "长春",
+            "石家庄",
+            "太原",
+            "南昌",
+            "贵阳",
+            "南宁",
+            "海口",
+            "兰州",
+            "西宁",
+            "银川",
+            "乌鲁木齐",
+            "拉萨",
+            "呼和浩特",
+            "香港",
+            "澳门",
+            "台北",
+            "东京",
+            "大阪",
+            "首尔",
+            "新加坡",
+            "曼谷",
+            "吉隆坡",
+            "纽约",
+            "洛杉矶",
+            "旧金山",
+            "西雅图",
+            "芝加哥",
+            "波士顿",
+            "华盛顿",
+            "伦敦",
+            "巴黎",
+            "柏林",
+            "罗马",
+            "马德里",
+            "莫斯科",
+            "悉尼",
+            "墨尔本",
+            "多伦多",
+            "温哥华",
+            "迪拜",
+            "孟买",
+            "新德里",
+            "beijing",
+            "shanghai",
+            "guangzhou",
+            "shenzhen",
+            "hangzhou",
+            "chengdu",
+            "chongqing",
+            "wuhan",
+            "tokyo",
+            "osaka",
+            "seoul",
+            "singapore",
+            "bangkok",
+            "new york",
+            "los angeles",
+            "san francisco",
+            "seattle",
+            "chicago",
+            "boston",
+            "washington",
+            "london",
+            "paris",
+            "berlin",
+            "rome",
+            "madrid",
+            "moscow",
+            "sydney",
+            "melbourne",
+            "toronto",
+            "vancouver",
+            "dubai",
+            "mumbai",
+            "delhi",
+        },
+        key=len,
+        reverse=True,
+    )
+)
+
+_FORECAST_HINTS = ("明天", "后天", "预报", "forecast", "tomorrow", "week", "一周")
+
+
+def guess_city(question):
+    """Best-effort city extraction for the router fallback."""
+    text = question or ""
+    low = text.lower()
+    for city in _COMMON_CITIES:
+        if city.lower() in low:
+            return city
+    for word in _CITY_NOISE_ZH:
+        text = text.replace(word, " ")
+    text = _CITY_NOISE_EN_RE.sub(" ", text)
+    text = re.sub(r"[,.!?，。！？、:：;；\"'“”‘’()（）]", " ", text)
+    text = " ".join(text.split()).strip()
+    # Reject leftovers that clearly are not a place name.
+    if not text or len(text) > 24 or len(text.split()) > 3:
+        return ""
+    return text
+
+
+def _search_topic(question):
+    text = question or ""
+    for word in ("请问", "帮我", "帮忙", "查一下", "查查", "搜一下", "搜索", "告诉我"):
+        text = text.replace(word, " ")
+    return re.sub(r"[?？!！。,，]+$", "", " ".join(text.split())).strip() or (question or "")
+
+
+def _wiki_topic(question):
+    text = re.sub(
+        r"(请问|帮我|查一下|告诉我|什么是|是什么意思|是谁|who is|what is|what's)",
+        " ",
+        question or "",
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"[?？!！。,，]+$", "", " ".join(text.split())).strip() or (question or "")
+
+
+def fallback_tool_call(question):
+    """Build a safe tool call when the router failed twice on a keyword hit.
+
+    Returns a parsed-call dict, or None when no argument can be derived
+    confidently (in that case the caller answers without a tool).
+    """
+    q = (question or "").strip()
+    matched = matched_tool_names(q)
+    if not matched:
+        return None
+
+    city_tools = [name for name in matched if name in _CITY_TOOL_ARGS]
+    if city_tools:
+        city = guess_city(q)
+        if not city:
+            return None
+        low = q.lower()
+        if "get_forecast" in city_tools and any(h in low for h in _FORECAST_HINTS):
+            return {"name": "get_forecast", "arguments": {"city": city, "days": 3}}
+        return {"name": city_tools[0], "arguments": _CITY_TOOL_ARGS[city_tools[0]](city)}
+
+    if "get_news" in matched:
+        return {"name": "get_news", "arguments": {"query": _search_topic(q)}}
+    if "get_wikipedia" in matched:
+        return {"name": "get_wikipedia", "arguments": {"topic": _wiki_topic(q)}}
+    if "search_web" in matched:
+        return {"name": "search_web", "arguments": {"query": _search_topic(q)}}
+    if "get_time" in matched:
+        city = guess_city(q)
+        return {"name": "get_time", "arguments": {"city": city} if city else {}}
+    for name in (
+        "get_ip_info",
+        "get_space_weather",
+        "get_earthquakes",
+        "get_iss_location",
+    ):
+        if name in matched:
+            return {"name": name, "arguments": {}}
+    return None
 
 
 def execute_tool(call):

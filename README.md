@@ -14,7 +14,7 @@
 - **Native audio in, speech out** — the microphone clip can go straight into the omni model; Whisper is used for language detection and tool routing. Answers are synthesized locally and played in the browser.
 - **Continuous conversation** — energy-based VAD listens, detects the end of a question, sends it, and resumes after the answer.
 - **25 keyless tools** — weather, forecasts, air quality, flights, time, FX, crypto, stocks, country facts, Wikipedia, web search, places, papers, news, holidays, recipes, sports, dictionary, IP, DNS, space weather, earthquakes, ISS, and more.
-- **Grounded answers** — a dedicated router prompt forces live-data questions to call a tool; the answer turn is instructed to use only the tool result.
+- **Grounded answers** — a dedicated router prompt forces live-data questions to call a tool; the answer turn is instructed to use only the tool result. If an explicit tool keyword still gets `NO_TOOL`, the decision is retried once; after that, a tool whose arguments can be derived from the text is called directly and marked `forced` in the log.
 - **Bilingual UI and prompts** — Chinese/English interface (`界面` / `UI` selector or `?lang=en`), with spoken-unit normalization such as `6.6℃ → 6.6 摄氏度`.
 - **Evaluation records** — every turn is appended to `turns.jsonl` with the transcript, tool call, tool result, answer, and timings. Download it from the `记录` / `Logs` button.
 
@@ -116,7 +116,7 @@ MiniCPM-o uses reference voices (`assets/voices/ref_zh.wav`, `ref_en.wav`) and i
 | Daily life | `get_news`, `get_holidays`, `search_recipes`, `get_sports_scores` |
 | Network & space | `get_ip_info`, `dns_lookup`, `get_space_weather`, `get_earthquakes`, `get_iss_location` |
 
-The router sends only a keyword-matched subset of tool schemas per turn, which keeps prompts small and tool selection more accurate.
+The router sends only a keyword-matched subset of tool schemas per turn, which keeps prompts small and tool selection more accurate. `get_news` returns a single top headline plus its source, so a spoken answer cannot merge two stories; the answer prompts also ask for one headline.
 
 ## Evaluation and debugging
 
@@ -140,6 +140,8 @@ Every text or voice turn is appended to `turns.jsonl`:
 Use it to separate failure modes:
 
 - `decision` has no `<tool_call>` for a live-data question → routing failure.
+- `decision_retry` is the second attempt after a keyword-matched `NO_TOOL`.
+- `tool.forced` is true when both attempts failed and a safe tool was called directly.
 - `tool.result` and `answer` disagree → grounding failure.
 - `question` is wrong → ASR failure, not a model failure.
 - `timings` shows whether time went to ASR, routing, the tool, or TTS.

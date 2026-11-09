@@ -28,7 +28,8 @@ from mlx_vlm.utils import load_config
 
 from .prompts import INSTRUCTION_EN, INSTRUCTION_ZH, ROUTER_EN, ROUTER_ZH
 from .public_tools import execute_tool, select_tools
-from .utils import language_of, parse_tool_call, trim_trailing_silence
+from .routing import resolve_decision
+from .utils import language_of, trim_trailing_silence
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = str(ROOT / "models" / "MiniCPM-o-4_5-MLX-4bit")
@@ -141,9 +142,11 @@ def generate_text(
     max_tokens=128,
     temperature=0.1,
     router=False,
+    messages=None,
 ):
     model, processor, config = load_minicpm(warm=False)
-    messages = _messages(question, language, router=router)
+    if messages is None:
+        messages = _messages(question, language, router=router)
     prompt = apply_chat_template(
         processor,
         config,
@@ -225,7 +228,28 @@ def run_pipeline(question=None, audio_path=None, language="auto"):
     )
     timings["decide_s"] = round(time.time() - t, 2)
 
-    call = parse_tool_call(first)
+    def retry_decision(failed, retry_instruction):
+        # Retry once when a keyword-matched question still produced NO_TOOL.
+        retry_messages = _messages(question, language, router=True) + [
+            {"role": "assistant", "content": failed},
+            {"role": "user", "content": retry_instruction},
+        ]
+        t_retry = time.time()
+        reply, _ = generate_text(
+            question,
+            language=language,
+            tools=tools,
+            audio_path=audio_path,
+            max_tokens=64,
+            temperature=0.0,
+            router=True,
+            messages=retry_messages,
+        )
+        timings["decide_retry_s"] = round(time.time() - t_retry, 2)
+        return reply
+
+    call, decision_used, decision_retry, forced = resolve_decision(question, first, retry_decision)
+
     tool = None
     messages = _messages(question, language)
     if call:
@@ -237,8 +261,10 @@ def run_pipeline(question=None, audio_path=None, language="auto"):
             "arguments": call.get("arguments", {}),
             "result": result,
         }
+        if forced:
+            tool["forced"] = True
         messages += [
-            {"role": "assistant", "content": first},
+            {"role": "assistant", "content": decision_used},
             {"role": "tool", "content": json.dumps(result, ensure_ascii=False)},
         ]
         if language == "zh":
@@ -281,6 +307,7 @@ def run_pipeline(question=None, audio_path=None, language="auto"):
         "model": "minicpm",
         "question": question,
         "decision": first,
+        "decision_retry": decision_retry,
         "tools_offered": [t["function"]["name"] for t in tools],
         "tool": tool,
         "answer": spoken.text or "",

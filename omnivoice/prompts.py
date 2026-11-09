@@ -16,6 +16,7 @@ INSTRUCTION_ZH = (
     "用一句简短的中文回答，不超过 30 个字。"
     "数字和单位用口语写法，例如 6.6℃ 写成 6.6 摄氏度，62% 写成百分之六十二。"
     "汇率和股价保留两位小数，不要逐位读长数字。"
+    "新闻只说最重要的一条，并说出媒体来源。"
     "不要使用 Markdown、列表或项目符号。"
 )
 INSTRUCTION_EN = (
@@ -23,7 +24,8 @@ INSTRUCTION_EN = (
     "the user asks for live or factual data. Answer in one short English sentence, "
     "at most 20 words. Write numbers and units the way they are spoken (for example, "
     "6.6°C as 6.6 degrees Celsius, 62% as 62 percent). Round exchange rates and "
-    "stock prices to two decimal places. No markdown, no lists."
+    "stock prices to two decimal places. For news, mention only the single most "
+    "important headline and its source. No markdown, no lists."
 )
 INSTRUCTION_NATIVE = (
     "你是一个友好的语音助手，可以闲聊，也可以查实时信息。"
@@ -31,6 +33,7 @@ INSTRUCTION_NATIVE = (
     "需要实时数据时调用工具；普通聊天直接回答。"
     "一句话，简短自然。数字和单位用口语写法，例如 6.6℃ 写成 6.6 摄氏度。"
     "汇率和股价保留两位小数，不要逐位读长数字。"
+    "新闻只说最重要的一条，并说出媒体来源。"
     "不要使用 Markdown、列表或项目符号。"
 )
 
@@ -62,6 +65,17 @@ ASR_PROMPTS = {
     "en": "The following is an English sentence.",
 }
 
+# Second attempt when the router ignored an explicit tool keyword.
+RETRY_ZH = (
+    "你上一次没有调用工具，这是错误的：这个问题需要实时或可查的数据。"
+    "现在必须调用一个最合适的工具。只输出工具调用，不要输出 NO_TOOL，也不要解释。"
+)
+RETRY_EN = (
+    "Your previous reply did not call a tool. That was wrong: this request needs "
+    "live or factual data. Call the most relevant tool now. Output only the tool "
+    "call; do not reply NO_TOOL and do not explain."
+)
+
 _CJK = re.compile(r"[一-鿿]")
 
 
@@ -73,3 +87,8 @@ def build_instruction(question: str | None) -> str:
 def build_router_instruction(question: str | None) -> str:
     """Pick the router prompt for the language of the question."""
     return ROUTER_ZH if _CJK.search(question or "") else ROUTER_EN
+
+
+def build_retry_instruction(question: str | None) -> str:
+    """Pick the retry prompt for the language of the question."""
+    return RETRY_ZH if _CJK.search(question or "") else RETRY_EN

@@ -111,3 +111,66 @@ def test_crypto_prices_are_short_but_timestamp_is_preserved(monkeypatch):
 
     assert result["prices"]["bitcoin"]["usd"] == 74358.46
     assert result["prices"]["bitcoin"]["last_updated_at"] == 1234567890
+
+
+RSS = """<?xml version="1.0"?>
+<rss><channel>
+  <item>
+    <title>First story - Reuters</title>
+    <link>https://example.com/1</link>
+    <pubDate>Mon, 09 Nov 2026 10:00:00 GMT</pubDate>
+    <source>Reuters</source>
+  </item>
+  <item>
+    <title>Second story - AP</title>
+    <link>https://example.com/2</link>
+    <pubDate>Mon, 09 Nov 2026 09:00:00 GMT</pubDate>
+    <source>AP</source>
+  </item>
+</channel></rss>"""
+
+
+def test_news_returns_one_headline_with_source(monkeypatch):
+    monkeypatch.setattr(pt, "http_text", lambda url, timeout=20: RSS)
+
+    result = pt.get_news("科技")
+
+    assert result["headline"] == "First story"
+    assert result["source"] == "Reuters"
+    assert "articles" not in result
+
+
+def test_matched_tool_names_is_empty_for_chat():
+    assert pt.matched_tool_names("给我讲个笑话") == []
+    assert "get_weather" in pt.matched_tool_names("北京天气怎么样")
+
+
+def test_fallback_weather_uses_city_from_question():
+    assert pt.fallback_tool_call("北京今天天气怎么样？") == {
+        "name": "get_weather",
+        "arguments": {"city": "北京"},
+    }
+
+
+def test_fallback_prefers_forecast_when_question_mentions_tomorrow():
+    assert pt.fallback_tool_call("上海明天会下雨吗？") == {
+        "name": "get_forecast",
+        "arguments": {"city": "上海", "days": 3},
+    }
+
+
+def test_fallback_news_uses_question_as_query():
+    call = pt.fallback_tool_call("最近有什么科技新闻？")
+
+    assert call["name"] == "get_news"
+    assert "科技新闻" in call["arguments"]["query"]
+
+
+def test_fallback_skips_plain_chat():
+    assert pt.fallback_tool_call("给我讲个笑话") is None
+
+
+def test_fallback_skips_tools_that_need_an_entity():
+    # A stock symbol or currency pair cannot be derived safely from the text.
+    assert pt.fallback_tool_call("苹果股价多少？") is None
+    assert pt.fallback_tool_call("美元兑人民币汇率是多少？") is None

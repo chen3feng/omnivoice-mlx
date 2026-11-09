@@ -49,9 +49,9 @@ from .qwen_omni import (
     MODEL_PATH,
     execute_tool,
     generate,
-    parse_tool_call,
     trim_trailing_silence,
 )
+from .routing import resolve_decision
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
@@ -84,6 +84,7 @@ def log_turn(result, source):
         "detected_language": result.get("detected_language"),
         "native": result.get("native", False),
         "decision": result.get("decision"),
+        "decision_retry": result.get("decision_retry"),
         "tools_offered": result.get("tools_offered"),
         "tool": _clip(result.get("tool")),
         "answer": result.get("answer"),
@@ -317,7 +318,28 @@ def run_qwen_pipeline(question=None, audio_path=None, speaker="Ethan", language=
     )
     timings["decide_s"] = round(time.time() - t, 2)
 
-    call = parse_tool_call(first)
+    def retry_decision(failed, retry_instruction):
+        # Retrying keeps the model's own argument extraction instead of
+        # guessing arguments ourselves.
+        t_retry = time.time()
+        retry_conv = decision_conv + [
+            {"role": "assistant", "content": failed},
+            {"role": "user", "content": retry_instruction},
+        ]
+        reply, _, _, _ = generate(
+            model,
+            processor,
+            retry_conv,
+            return_audio=False,
+            max_new_thinker=256,
+            max_new_talker=384,
+            tools=tools,
+        )
+        timings["decide_retry_s"] = round(time.time() - t_retry, 2)
+        return reply
+
+    call, decision_used, decision_retry, forced = resolve_decision(question, first, retry_decision)
+
     tool = None
     if call:
         t = time.time()
@@ -328,8 +350,10 @@ def run_qwen_pipeline(question=None, audio_path=None, speaker="Ethan", language=
             "arguments": call.get("arguments", {}),
             "result": result,
         }
+        if forced:
+            tool["forced"] = True
         answer_conv += [
-            {"role": "assistant", "content": first},
+            {"role": "assistant", "content": decision_used},
             {"role": "tool", "content": json.dumps(result, ensure_ascii=False)},
             {
                 "role": "user",
@@ -368,6 +392,7 @@ def run_qwen_pipeline(question=None, audio_path=None, speaker="Ethan", language=
         "model": "qwen",
         "question": question,
         "decision": first,
+        "decision_retry": decision_retry,
         "tools_offered": [t["function"]["name"] for t in tools],
         "tool": tool,
         "answer": answer,
