@@ -68,3 +68,29 @@ def test_resolve_leaves_entity_tools_alone():
     assert call is None
     assert forced is False
     assert used == "NO_TOOL"
+
+
+def test_explanatory_question_is_not_forced_into_a_tool():
+    called = False
+
+    def retry(*_):
+        nonlocal called
+        called = True
+        return '<tool_call>{"name": "get_flight", "arguments": {"callsign": "CA1234"}}</tool_call>'
+
+    call, used, retry_reply, forced = routing.resolve_decision(
+        "飞机为什么能升起来？", "NO_TOOL", retry
+    )
+
+    assert call is None
+    assert retry_reply is None
+    assert forced is False
+    assert used == "NO_TOOL"
+    assert not called
+
+
+def test_explanatory_detection_keeps_data_questions_eligible():
+    assert routing.is_explanatory_question("螺旋桨飞机为什么不能超音速？")
+    assert routing.is_explanatory_question("Why can airplanes fly?")
+    assert not routing.is_explanatory_question("北京今天天气怎么样？")
+    assert not routing.is_explanatory_question("What is the weather in Tokyo today?")

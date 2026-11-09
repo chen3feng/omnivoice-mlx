@@ -19,6 +19,33 @@ from .utils import parse_tool_call
 # (first_reply, retry_instruction) -> second router reply
 RetryFn = Callable[[str, str], str]
 
+# "Why can airplanes fly?" shares the keyword "airplane" with the live-flight
+# tool, but it is a knowledge question the model should answer itself.  When
+# the router already said NO_TOOL for one of these, that decision was right;
+# retrying would force a bogus call (e.g. get_flight with a made-up callsign).
+_EXPLANATORY_MARKERS = (
+    "为什么",
+    "为何",
+    "原理",
+    "区别",
+    "解释",
+    "是怎么回事",
+    "是什么",
+    "什么是",
+    "why",
+    "how does",
+    "how do",
+    "how can",
+    "explain",
+    "difference",
+)
+
+
+def is_explanatory_question(question: str | None) -> bool:
+    """True for how/why/what-is questions that should not force a tool call."""
+    q = (question or "").lower()
+    return any(marker in q for marker in _EXPLANATORY_MARKERS)
+
 
 def forced_call_text(call: dict) -> str:
     """Render a directly-built call like the model's own tool-call text."""
@@ -41,8 +68,9 @@ def resolve_decision(question: str | None, first: str, retry: RetryFn):
     retry_reply = None
     forced = False
 
-    # Pure chat has no keyword match: NO_TOOL is a valid answer, not a failure.
-    if call or not matched_tool_names(question):
+    # Pure chat and explanatory questions have no live-data need: NO_TOOL is a
+    # valid answer, not a routing failure.
+    if call or not matched_tool_names(question) or is_explanatory_question(question):
         return call, decision_used, retry_reply, forced
 
     retry_reply = retry(first or "NO_TOOL", build_retry_instruction(question))
