@@ -188,6 +188,7 @@ omnivoice/
   minicpm_omni.py    # MiniCPM-o MLX wrapper, key remap, TTS marker fix
   public_tools.py    # 25 keyless tools
   prompts.py         # shared bilingual answer/router prompts
+  routing.py         # router retry and safe tool fallback
   utils.py           # pure helpers
 web/                 # bilingual UI (HTML/CSS/JS)
 assets/voices/       # MiniCPM reference voices

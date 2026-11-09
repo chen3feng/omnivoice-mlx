@@ -188,6 +188,7 @@ omnivoice/
   minicpm_omni.py    # MiniCPM-o MLX 封装、权重 key 重映射、TTS 结束符修复
   public_tools.py    # 25 个免密钥工具
   prompts.py         # 中英文回答/路由提示词
+  routing.py         # 路由重试与安全兜底
   utils.py           # 纯工具函数
 web/                 # 双语 UI（HTML/CSS/JS）
 assets/voices/       # MiniCPM 参考音色
