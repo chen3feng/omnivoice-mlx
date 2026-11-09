@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title data-i18n="app.title">OmniVoice · 本地双语语音助手</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="logo">O</div>
+      <div>
+        <h1 data-i18n="app.name">OmniVoice</h1>
+        <p data-i18n="app.tagline">本地运行 · Qwen3-Omni / MiniCPM-o 对比 · 25 个免密钥工具</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <a class="turns-link" href="/api/turns/download" data-i18n="controls.records" data-i18n-title="title.records" title="下载每轮问答记录（转写、工具、回答、耗时）">记录</a>
+      <div class="badge" id="health" data-i18n="health.connecting">连接中…</div>
+    </div>
+  </header>
+
+  <main id="chat" class="chat">
+    <div class="empty" id="empty">
+      <div class="empty-orb">🎙️</div>
+      <h2 data-i18n="empty.title">点一下麦克风，直接说话</h2>
+      <p data-i18n-html="empty.examples">试试：「北京今天天气怎么样？」<br>
+      「TVF6410 现在飞到哪了？」<br>
+      「美元兑人民币多少？」<br>
+      「给我讲个笑话」</p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="status-row">
+      <div class="status" id="status" data-state="idle" data-i18n="status.idle">准备就绪</div>
+      <div class="right-controls">
+        <label class="speaker-wrap"><span data-i18n="controls.model">模型</span>
+          <select id="model" data-i18n-title="title.model" title="切换对比 Qwen3-Omni 与 MiniCPM-o 4.5">
+            <option value="qwen" selected>Qwen3-Omni 30B</option>
+            <option value="minicpm">MiniCPM-o 4.5 9B</option>
+          </select>
+        </label>
+        <label class="switch" data-i18n-title="title.native" title="音频直接送入模型，跳过 Whisper（MiniCPM 仍用 Whisper 做语种/工具路由）">
+          <input type="checkbox" id="nativeAudio">
+          <span class="track"><span class="thumb"></span></span>
+          <span class="switch-label" data-i18n="controls.native">原生语音</span>
+        </label>
+        <label class="switch" data-i18n-title="title.continuous" title="一直听，停顿后自动发送">
+          <input type="checkbox" id="continuous">
+          <span class="track"><span class="thumb"></span></span>
+          <span class="switch-label" data-i18n="controls.continuous">连续对话</span>
+        </label>
+        <label class="speaker-wrap"><span data-i18n="controls.language">语言</span>
+          <select id="lang" data-i18n-title="title.language" title="自动只在中/英之间选择">
+            <option value="auto" selected data-i18n="lang.auto">自动</option>
+            <option value="zh" data-i18n="lang.zh">中文</option>
+            <option value="en" data-i18n="lang.en">EN</option>
+          </select>
+        </label>
+        <label class="speaker-wrap"><span data-i18n="controls.speaker">音色</span>
+          <select id="speaker">
+            <option value="Chelsie">Chelsie</option>
+            <option value="Ethan" selected>Ethan</option>
+            <option value="Aiden">Aiden</option>
+          </select>
+        </label>
+        <label class="speaker-wrap"><span data-i18n="controls.uiLang">界面</span>
+          <select id="uiLang" data-i18n-title="title.uiLang" title="切换界面语言">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="mic-row">
+      <button id="mic" class="mic" data-i18n-aria-label="mic.aria" aria-label="开始或结束录音">
+        <span class="mic-icon">🎤</span>
+        <span class="pulse"></span>
+      </button>
+    </div>
+
+    <form id="textForm" class="text-form">
+      <input id="textInput" type="text" data-i18n-placeholder="input.placeholder" placeholder="也可以打字问…" autocomplete="off">
+      <button type="submit" class="send" data-i18n="input.send">发送</button>
+    </form>
+    <div class="hint" id="hint" data-i18n="hint.default">点击麦克风开始录音，再次点击结束并发送</div>
+  </footer>
+</div>
+<div class="toast" id="toast"></div>
+<script src="/static/i18n.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

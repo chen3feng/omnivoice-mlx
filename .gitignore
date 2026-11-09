@@ -1,0 +1,34 @@
+# Secrets — never commit API keys
+.env
+.env.*
+!.env.example
+
+# Model weights (downloaded by scripts/download_models.py)
+models/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Runtime data
+turns.jsonl
+*.log
+
+# Audio artifacts (keep the small reference clips and one sample)
+*.wav
+*.aiff
+*.m4a
+!assets/voices/*.wav
+!assets/samples/*.wav
+
+# macOS
+.DS_Store
