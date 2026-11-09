@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,14 +8,13 @@ version = "0.1.0"
 description = "A local bilingual voice assistant for Apple Silicon, powered by Qwen3-Omni and MiniCPM-o on MLX."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "OmniVoice contributors" }]
 keywords = ["mlx", "voice-assistant", "qwen3-omni", "minicpm-o", "speech", "apple-silicon"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: MacOS X",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
