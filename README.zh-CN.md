@@ -11,7 +11,7 @@
 ## 特性
 
 - **两个本地模型，一个界面** —— Qwen3-Omni 30B-A3B（4-bit）与 MiniCPM-o 4.5（MLX 4-bit）。工具栏可切换；同一时间只驻留一个模型，避免统一内存被撑爆。
-- **原生语音输入，语音输出** —— 麦克风音频可以直接送入 omni 模型；Whisper 只负责语种判断和工具路由。回答在本地合成，浏览器播放。
+- **原生语音输入，语音输出** —— 麦克风音频直接送入 omni 模型，由它同时完成工具决策和回答，转写错词不会把正确的工具从提示词里挤掉；Whisper 只是可选的转写探测（`KEEP_TRANSCRIPT`）。回答在本地合成，浏览器播放。
 - **连续对话** —— 基于能量的 VAD 持续监听，自动判断问题结束，发送并等待回答，然后继续听。
 - **25 个免密钥工具** —— 天气、预报、空气质量、航班、时间、汇率、加密货币、股票、国家信息、维基百科、网页搜索、地点、论文、新闻、节假日、菜谱、体育比分、词典、IP、DNS、空间天气、地震、国际空间站等。
 - **回答有依据** —— 决策轮使用严格的路由提示词，实时数据问题必须调用工具；回答轮被要求只使用工具结果。如果命中了明确的关键词却仍返回 `NO_TOOL`，会再重试一次决策；仍然失败时，直接调用参数可以从问题文本推导出的安全工具，并在日志里标记 `forced`。
@@ -23,8 +23,9 @@
 ```mermaid
 flowchart LR
   Browser["浏览器 UI<br/>麦克风 + Web Audio VAD"] -->|WebM / WAV| API["FastAPI<br/>omnivoice.server"]
-  API --> ASR["Whisper large-v3-turbo<br/>中英文约束"]
-  ASR --> Router["路由提示词<br/>工具或 NO_TOOL"]
+  API -->|音频或文本| Router["路由提示词<br/>工具或 NO_TOOL"]
+  API --> ASR["Whisper large-v3-turbo<br/>可选转写"]
+  ASR -.->|转写| Router
   Router --> Tools["25 个免密钥工具<br/>公开 API"]
   Router --> Model["Qwen3-Omni 或 MiniCPM-o<br/>Apple Silicon MLX"]
   Tools --> Model
@@ -98,7 +99,8 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[mlx]"
 | 语音提问 | 点一下麦克风，说话，再点一下结束。 |
 | 文字提问 | 在输入框输入，按发送。 |
 | 连续对话 | 打开 `连续对话` / `Continuous`；停顿约 1 秒自动发送，回答结束后继续听。 |
-| 原生语音 | 打开 `原生语音` / `Native audio`；音频送入 omni 模型，Whisper 仍负责工具路由。 |
+| 原生语音 | 打开 `原生语音` / `Native audio`；音频送入 omni 模型，工具决策也由它完成，Whisper 只提供可选转写。 |
+| 保留转写 | 打开 `保留转写` / `Transcript`；关闭后 Qwen 原生模式跳过 Whisper（更快，日志里没有问题文本）。MiniCPM 始终转写。 |
 | 切换模型 | 使用 `模型` / `Model` 选择器；另一个模型会被卸载以释放内存。 |
 | 切换界面语言 | 使用 `界面` / `UI`，或打开 `http://127.0.0.1:8000/?lang=en`。 |
 | 回看回答 | 点击 `记录` / `Logs` 下载 `turns.jsonl`。 |
@@ -116,7 +118,7 @@ MiniCPM-o 使用参考音色（`assets/voices/ref_zh.wav`、`ref_en.wav`），�
 | 生活 | `get_news`、`get_holidays`、`search_recipes`、`get_sports_scores` |
 | 网络与太空 | `get_ip_info`、`dns_lookup`、`get_space_weather`、`get_earthquakes`、`get_iss_location` |
 
-路由层每轮只发送关键词匹配到的工具子集，既缩短提示词，也提高工具选择准确率。`get_news` 只返回一条最重要的标题和来源，避免语音答案把两条新闻合并；回答提示词也要求只播报一条。
+文本轮只发送关键词匹配到的工具子集。Qwen 原生语音发送全部工具，因为它直接听音频，转写错词不能把正确的工具挤掉；MiniCPM 保留关键词子集，因为在 9B 模型上全部 25 个 schema 会让决策多花约 4 秒。`get_news` 只返回一条最重要的标题和来源，避免语音答案把两条新闻合并；回答提示词也要求只播报一条。
 
 ## 评测与调试
 
@@ -142,6 +144,7 @@ MiniCPM-o 使用参考音色（`assets/voices/ref_zh.wav`、`ref_en.wav`），�
 - 实时数据问题里 `decision` 没有 `<tool_call>` → 路由失败。
 - `decision_retry` 是命中关键词后第一次 `NO_TOOL` 的第二次决策。
 - `tool.forced` 为 true → 两次决策都失败，直接调用了安全的兜底工具。
+- `KEEP_TRANSCRIPT=0` 时，Qwen 原生轮次的 `question` 为 null，`route_input` 显示 `audio`。
 - `tool.result` 与 `answer` 不一致 → 回答没有接地（幻觉）。
 - `question` 本身错了 → ASR 问题，不是模型问题。
 - `timings` 可以看时间花在 ASR、路由、工具还是 TTS。
@@ -204,6 +207,7 @@ tests/               # pytest
 | `HOST` | `127.0.0.1` | 监听地址。 |
 | `PORT` | `8000` | HTTP 端口。 |
 | `ASR_MODEL` | `mlx-community/whisper-large-v3-turbo` | Whisper 仓库或本地路径。 |
+| `KEEP_TRANSCRIPT` | `1` | Qwen 原生语音直接听音频路由；设为 `0` 跳过 Whisper 转写探测（更快，日志里没有问题文本）。 |
 | `MLX_WIRED_LIMIT_GB` | `30` | Wired 内存上限；32 GB 机器建议调低。 |
 | `HF_ENDPOINT` | 未设置 | 设为 `https://hf-mirror.com` 使用国内镜像。 |
 | `HF_TOKEN` | 未设置 | 仅用于需要授权的模型仓库。 |

@@ -11,7 +11,7 @@
 ## Highlights
 
 - **Two local models, one UI** — Qwen3-Omni 30B-A3B (4-bit) and MiniCPM-o 4.5 (MLX 4-bit). Switch models from the toolbar; only one stays resident at a time to fit unified memory.
-- **Native audio in, speech out** — the microphone clip can go straight into the omni model; Whisper is used for language detection and tool routing. Answers are synthesized locally and played in the browser.
+- **Native audio in, speech out** — the microphone clip goes into the omni model for both the tool decision and the answer, so a misheard transcript cannot hide the right tool; Whisper is an optional transcript probe (`KEEP_TRANSCRIPT`). Answers are synthesized locally and played in the browser.
 - **Continuous conversation** — energy-based VAD listens, detects the end of a question, sends it, and resumes after the answer.
 - **25 keyless tools** — weather, forecasts, air quality, flights, time, FX, crypto, stocks, country facts, Wikipedia, web search, places, papers, news, holidays, recipes, sports, dictionary, IP, DNS, space weather, earthquakes, ISS, and more.
 - **Grounded answers** — a dedicated router prompt forces live-data questions to call a tool; the answer turn is instructed to use only the tool result. If an explicit tool keyword still gets `NO_TOOL`, the decision is retried once; after that, a tool whose arguments can be derived from the text is called directly and marked `forced` in the log.
@@ -23,8 +23,9 @@
 ```mermaid
 flowchart LR
   Browser["Browser UI<br/>mic + Web Audio VAD"] -->|WebM / WAV| API["FastAPI<br/>omnivoice.server"]
-  API --> ASR["Whisper large-v3-turbo<br/>zh/en constrained"]
-  ASR --> Router["Router prompt<br/>tool or NO_TOOL"]
+  API -->|audio or text| Router["Router prompt<br/>tool or NO_TOOL"]
+  API --> ASR["Whisper large-v3-turbo<br/>optional transcript"]
+  ASR -.->|transcript| Router
   Router --> Tools["25 keyless tools<br/>public APIs"]
   Router --> Model["Qwen3-Omni or MiniCPM-o<br/>MLX on Apple Silicon"]
   Tools --> Model
@@ -98,7 +99,8 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -e ".[mlx]"
 | Ask by voice | Tap the mic, speak, tap again. |
 | Ask by text | Type in the box and press Send. |
 | Continuous mode | Toggle `连续对话` / `Continuous`; it sends after ~1 s of silence and resumes after the answer. |
-| Native audio | Toggle `原生语音` / `Native audio`; the clip goes to the omni model, while Whisper still routes tools. |
+| Native audio | Toggle `原生语音` / `Native audio`; the clip goes to the omni model, which also makes the tool decision. Whisper only provides an optional transcript. |
+| Keep transcript | Toggle `保留转写` / `Transcript`; turn it off to skip Whisper in Qwen native mode (faster, no question text in logs). MiniCPM always transcribes. |
 | Switch model | Use the `模型` / `Model` selector. The other model is unloaded to free memory. |
 | Switch UI language | Use `界面` / `UI`, or open `http://127.0.0.1:8000/?lang=en`. |
 | Review answers | Click `记录` / `Logs` to download `turns.jsonl`. |
@@ -116,7 +118,7 @@ MiniCPM-o uses reference voices (`assets/voices/ref_zh.wav`, `ref_en.wav`) and i
 | Daily life | `get_news`, `get_holidays`, `search_recipes`, `get_sports_scores` |
 | Network & space | `get_ip_info`, `dns_lookup`, `get_space_weather`, `get_earthquakes`, `get_iss_location` |
 
-The router sends only a keyword-matched subset of tool schemas per turn, which keeps prompts small and tool selection more accurate. `get_news` returns a single top headline plus its source, so a spoken answer cannot merge two stories; the answer prompts also ask for one headline.
+Text turns send only a keyword-matched subset of tool schemas. Qwen native voice sends every tool because it hears the clip and a bad transcript must not hide the right schema; MiniCPM keeps the keyword subset because all 25 schemas add about 4 s to its decision on a 9B model. `get_news` returns a single top headline plus its source, so a spoken answer cannot merge two stories; the answer prompts also ask for one headline.
 
 ## Evaluation and debugging
 
@@ -142,6 +144,7 @@ Use it to separate failure modes:
 - `decision` has no `<tool_call>` for a live-data question → routing failure.
 - `decision_retry` is the second attempt after a keyword-matched `NO_TOOL`.
 - `tool.forced` is true when both attempts failed and a safe tool was called directly.
+- `question` is null for native Qwen turns when `KEEP_TRANSCRIPT=0`; `route_input` shows `audio`.
 - `tool.result` and `answer` disagree → grounding failure.
 - `question` is wrong → ASR failure, not a model failure.
 - `timings` shows whether time went to ASR, routing, the tool, or TTS.
@@ -204,6 +207,7 @@ tests/               # pytest suite
 | `HOST` | `127.0.0.1` | Bind address. |
 | `PORT` | `8000` | HTTP port. |
 | `ASR_MODEL` | `mlx-community/whisper-large-v3-turbo` | Whisper repo or local path. |
+| `KEEP_TRANSCRIPT` | `1` | Native Qwen voice routes on audio; set `0` to skip the Whisper transcript probe (faster, no question text in logs). |
 | `MLX_WIRED_LIMIT_GB` | `30` | Wired-memory limit. Lower it on a 32 GB Mac. |
 | `HF_ENDPOINT` | unset | Set to `https://hf-mirror.com` for the China mirror. |
 | `HF_TOKEN` | unset | Only for gated model repositories. |

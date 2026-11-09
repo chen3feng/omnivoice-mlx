@@ -12,6 +12,7 @@ const textInput = $('#textInput');
 const healthEl = $('#health');
 const continuousToggle = $('#continuous');
 const nativeToggle = $('#nativeAudio');
+const keepTranscriptToggle = $('#keepTranscript');
 const hintEl = $('#hint');
 
 let recorder = null;
@@ -21,6 +22,7 @@ let busy = false;
 let recTimer = null;
 let recStart = 0;
 let toastTimer = null;
+let transcriptDefaultApplied = false;
 
 /* ---------- continuous listening (energy VAD) ---------- */
 
@@ -67,6 +69,8 @@ function syncModelControls() {
   // speaker presets, so the speaker selector does not apply.
   speakerSel.disabled = mini;
   speakerSel.title = mini ? t('title.voiceMini') : '';
+  // MiniCPM always needs the Whisper transcript for its reference voice.
+  keepTranscriptToggle.disabled = mini;
   hintEl.textContent = defaultHint();
 }
 
@@ -102,6 +106,12 @@ async function checkHealth() {
   try {
     const r = await fetch('/api/health');
     const j = await r.json();
+    // Match the checkbox to the server default on first load only; afterwards
+    // the user's choice wins.
+    if (!transcriptDefaultApplied && j.keep_transcript != null) {
+      keepTranscriptToggle.checked = !!j.keep_transcript;
+      transcriptDefaultApplied = true;
+    }
     if (j.ready) {
       const name = j.loaded === 'minicpm' ? 'MiniCPM'
         : j.loaded === 'qwen+minicpm' ? 'Qwen+MiniCPM' : 'Qwen';
@@ -533,6 +543,7 @@ async function askNative(blob) {
   fd.append('speaker', speakerSel.value);
   fd.append('language', langSel.value);
   fd.append('model', modelSel.value);
+  fd.append('keep_transcript', keepTranscriptToggle.checked ? 'true' : 'false');
 
   const r = await fetch('/api/answer_audio', { method: 'POST', body: fd });
   const j = await r.json();

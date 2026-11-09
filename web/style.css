@@ -79,6 +79,8 @@ header p {
 .header-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -345,7 +347,7 @@ footer {
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: 6px 8px;
 }
 
 .turns-link {
@@ -367,7 +369,7 @@ footer {
 .switch {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   cursor: pointer;
   font-size: 12px;
   color: var(--muted);
@@ -414,7 +416,7 @@ footer {
   color: var(--muted);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 select {
@@ -422,7 +424,7 @@ select {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 6px 10px;
+  padding: 5px 8px;
   font-size: 12px;
   outline: none;
 }

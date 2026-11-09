@@ -213,8 +213,10 @@ def run_pipeline(question=None, audio_path=None, language="auto"):
     timings = {}
 
     # Turn 1: route to a tool (or decide to chat).  This is a router prompt,
-    # not an answer prompt: it must not invent live data.  The keyword router
-    # keeps the tool prompt small, which matters a lot on a 9B model.
+    # not an answer prompt: it must not invent live data.  The router already
+    # hears the clip, but the 9B model is much slower with all 25 schemas
+    # (~6.0s vs ~1.7-2.3s in tests), so the keyword subset still picks which
+    # tools it sees.  Whisper supplies the transcript and language.
     tools = select_tools(question)
     t = time.time()
     first, _ = generate_text(

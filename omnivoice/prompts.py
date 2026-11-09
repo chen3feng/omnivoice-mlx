@@ -29,9 +29,11 @@ INSTRUCTION_EN = (
 )
 INSTRUCTION_NATIVE = (
     "你是一个友好的语音助手，可以闲聊，也可以查实时信息。"
-    "用户用语音提问。请用与用户相同的语言回答：用户说中文就用中文，用户说英文就用英文。"
+    "用户用语音提问。请完全使用用户所说的语言回答，不要混用语言："
+    "用户说中文就全部用中文，用户说英文就全部用英文。"
     "需要实时数据时调用工具；普通聊天直接回答。"
-    "一句话，简短自然。数字和单位用口语写法，例如 6.6℃ 写成 6.6 摄氏度。"
+    "一句话，简短自然。数字和单位用该语言的口语写法："
+    "英文说 6.6 degrees Celsius、62 percent，中文说 6.6 摄氏度、百分之六十二。"
     "汇率和股价保留两位小数，不要逐位读长数字。"
     "新闻只说最重要的一条，并说出媒体来源。"
     "不要使用 Markdown、列表或项目符号。"
@@ -84,9 +86,17 @@ def build_instruction(question: str | None) -> str:
     return INSTRUCTION_ZH if _CJK.search(question or "") else INSTRUCTION_EN
 
 
-def build_router_instruction(question: str | None) -> str:
-    """Pick the router prompt for the language of the question."""
-    return ROUTER_ZH if _CJK.search(question or "") else ROUTER_EN
+def build_router_instruction(question: str | None, language: str = "auto") -> str:
+    """Pick the router prompt from the requested language or the transcript."""
+    if language == "zh":
+        return ROUTER_ZH
+    if language == "en":
+        return ROUTER_EN
+    if question:
+        return ROUTER_ZH if _CJK.search(question) else ROUTER_EN
+    # Native audio with auto language has no transcript to inspect.  The app
+    # is Chinese-first, and an omni model follows either router prompt.
+    return ROUTER_ZH
 
 
 def build_retry_instruction(question: str | None) -> str:

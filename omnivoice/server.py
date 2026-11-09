@@ -58,6 +58,15 @@ WEB = ROOT / "web"
 TURN_LOG = ROOT / "turns.jsonl"
 _turn_seq = 0
 ASR_MODEL = os.environ.get("ASR_MODEL", "mlx-community/whisper-large-v3-turbo")
+# Native Qwen voice routes on the audio itself.  Keeping a Whisper transcript
+# costs about a second but preserves the question text in turns.jsonl and
+# gives an explicit language.  KEEP_TRANSCRIPT=0 skips Whisper entirely.
+KEEP_TRANSCRIPT = os.environ.get("KEEP_TRANSCRIPT", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+    "off",
+)
 
 
 def _clip(value, limit=4000):
@@ -81,6 +90,8 @@ def log_turn(result, source):
         "source": source,
         "model": result.get("model"),
         "question": result.get("question"),
+        "route_input": result.get("route_input"),
+        "transcript_kept": result.get("transcript_kept"),
         "detected_language": result.get("detected_language"),
         "native": result.get("native", False),
         "decision": result.get("decision"),
@@ -197,6 +208,7 @@ async def health():
         "models": ["qwen", "minicpm"],
         "load_s": state.get("load_s"),
         "minicpm_load_s": minicpm_omni._state.get("load_s"),
+        "keep_transcript": KEEP_TRANSCRIPT,
     }
 
 
@@ -271,7 +283,7 @@ def transcribe_file(path, language="auto"):
 
 def run_qwen_pipeline(question=None, audio_path=None, speaker="Ethan", language="auto"):
     model, processor = state["model"], state["processor"]
-    router = build_router_instruction(question)
+    router = build_router_instruction(question, language)
     if audio_path:
         if language == "zh":
             instruction = INSTRUCTION_ZH
@@ -284,8 +296,9 @@ def run_qwen_pipeline(question=None, audio_path=None, speaker="Ethan", language=
             prefix = "用户说："
         if question:
             instruction = prefix + question + "\n" + instruction
-        # The answer turn hears the real clip; the router turn uses the
-        # Whisper transcript, which is far more reliable for tool selection.
+        # Both turns hear the real clip.  The router does not need a Whisper
+        # transcript, and offering every tool means a bad transcript cannot
+        # hide the right schema from the model.
         answer_conv = [
             {
                 "role": "user",
@@ -295,17 +308,24 @@ def run_qwen_pipeline(question=None, audio_path=None, speaker="Ethan", language=
                 ],
             }
         ]
-        decision_text = (question + "\n" + router) if question else router
-        decision_conv = [{"role": "user", "content": decision_text}]
+        decision_conv = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "audio", "audio": audio_path},
+                    {"type": "text", "text": router},
+                ],
+            }
+        ]
+        tools = TOOLS
     else:
         answer_conv = [{"role": "user", "content": question + " " + build_instruction(question)}]
         decision_conv = [{"role": "user", "content": question + "\n" + router}]
+        # Keep the text prompt small: a keyword-matched subset is faster.
+        tools = select_tools(question) if question else TOOLS
     timings = {}
-    # Keep the tool prompt small: a keyword-matched subset is faster and
-    # usually more accurate than sending all 25 schemas on every turn.
-    tools = select_tools(question) if question else TOOLS
 
-    # Turn 1: text-only tool decision.
+    # Turn 1: tool decision.  Native voice routes on audio; text routes on text.
     t = time.time()
     first, _, _, _ = generate(
         model,
@@ -391,6 +411,7 @@ def run_qwen_pipeline(question=None, audio_path=None, speaker="Ethan", language=
     payload = {
         "model": "qwen",
         "question": question,
+        "route_input": "audio" if audio_path else "text",
         "decision": first,
         "decision_retry": decision_retry,
         "tools_offered": [t["function"]["name"] for t in tools],
@@ -476,6 +497,7 @@ async def answer_audio(
     speaker: str = Form("Ethan"),
     language: str = Form("auto"),
     model: str = Form("qwen"),
+    keep_transcript: bool | None = Form(None),
 ):
     """Voice path. Qwen hears the clip directly; MiniCPM also hears it, with a
     Whisper transcript used for language/tool routing."""
@@ -486,6 +508,9 @@ async def answer_audio(
         speaker = "Ethan"
     if language not in ("auto", "zh", "en"):
         language = "auto"
+    # The UI exposes this per request; API clients fall back to the env default.
+    if keep_transcript is None:
+        keep_transcript = KEEP_TRANSCRIPT
     async with lock:
         if model == "minicpm":
             ensure_minicpm()
@@ -536,20 +561,23 @@ async def answer_audio(
                     language=detected,
                 )
                 result["question"] = transcript
+                result["route_input"] = "audio"
+                result["transcript_kept"] = True
                 result["detected_language"] = detected
                 result["timings"]["probe_s"] = round(probe_s, 2)
             else:
-                # Auto mode: a quick zh/en probe only picks the reply-language
-                # prompt. The audio itself still goes straight into Qwen3-Omni;
-                # the transcript is discarded.
-                # The transcript is used for the tool decision.  The real
-                # audio still drives the spoken answer, so this remains a
-                # native speech-understanding path.
-                t_probe = time.time()
-                route_text, detected, _ = transcribe_file(str(dst), language)
-                if language == "auto":
-                    language = detected
-                probe_s = time.time() - t_probe
+                # Native audio: Qwen hears the clip for both the tool decision
+                # and the answer.  Whisper is now only an optional transcript
+                # probe for logs and an explicit language; it does not drive
+                # routing, so a misheard word cannot hide the right tool.
+                route_text = None
+                probe_s = None
+                if keep_transcript:
+                    t_probe = time.time()
+                    route_text, detected, _ = transcribe_file(str(dst), language)
+                    if language == "auto":
+                        language = detected
+                    probe_s = time.time() - t_probe
 
                 result = run_qwen_pipeline(
                     audio_path=str(dst),
@@ -557,9 +585,13 @@ async def answer_audio(
                     speaker=speaker,
                     language=language,
                 )
-                if probe_s is not None:
+                result["route_input"] = "audio"
+                result["transcript_kept"] = keep_transcript
+                if keep_transcript:
                     result["detected_language"] = language
                     result["timings"]["probe_s"] = round(probe_s, 2)
+                else:
+                    result["detected_language"] = language if language in ("zh", "en") else None
     result["native"] = True
     log_turn(result, "voice")
     return JSONResponse(result)

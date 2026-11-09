@@ -17,6 +17,12 @@
       </div>
     </div>
     <div class="header-right">
+      <label class="speaker-wrap"><span data-i18n="controls.uiLang">界面</span>
+        <select id="uiLang" data-i18n-title="title.uiLang" title="切换界面语言">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </label>
       <a class="turns-link" href="/api/turns/download" data-i18n="controls.records" data-i18n-title="title.records" title="下载每轮问答记录（转写、工具、回答、耗时）">记录</a>
       <div class="badge" id="health" data-i18n="health.connecting">连接中…</div>
     </div>
@@ -48,6 +54,11 @@
           <span class="track"><span class="thumb"></span></span>
           <span class="switch-label" data-i18n="controls.native">原生语音</span>
         </label>
+        <label class="switch" data-i18n-title="title.transcript" title="原生语音时保留 Whisper 转写，写入评测记录；关闭可省约 1 秒">
+          <input type="checkbox" id="keepTranscript" checked>
+          <span class="track"><span class="thumb"></span></span>
+          <span class="switch-label" data-i18n="controls.transcript">保留转写</span>
+        </label>
         <label class="switch" data-i18n-title="title.continuous" title="一直听，停顿后自动发送">
           <input type="checkbox" id="continuous">
           <span class="track"><span class="thumb"></span></span>
@@ -65,12 +76,6 @@
             <option value="Chelsie">Chelsie</option>
             <option value="Ethan" selected>Ethan</option>
             <option value="Aiden">Aiden</option>
-          </select>
-        </label>
-        <label class="speaker-wrap"><span data-i18n="controls.uiLang">界面</span>
-          <select id="uiLang" data-i18n-title="title.uiLang" title="切换界面语言">
-            <option value="zh">中文</option>
-            <option value="en">English</option>
           </select>
         </label>
       </div>

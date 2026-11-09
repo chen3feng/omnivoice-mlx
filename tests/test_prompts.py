@@ -26,6 +26,14 @@ def test_router_prompts_forbid_answering():
     assert build_router_instruction("weather in Tokyo") == ROUTER_EN
 
 
+def test_router_language_prefers_explicit_selection():
+    assert build_router_instruction(None, "zh") == ROUTER_ZH
+    assert build_router_instruction(None, "en") == ROUTER_EN
+    assert build_router_instruction("北京天气", "en") == ROUTER_EN
+    # Native audio with auto language has no transcript; Chinese-first default.
+    assert build_router_instruction(None, "auto") == ROUTER_ZH
+
+
 def test_retry_prompts_demand_a_tool_call():
     assert "NO_TOOL" in RETRY_ZH
     assert "NO_TOOL" in RETRY_EN
